@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sourcebook — NotebookLM Studio (Stage 1–5 End-to-End RAG)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./assets/css/main.css" />
+</head>
+<body>
+
+<!-- AUTH VIEW -->
+<div id="authView" class="auth-view">
+  <div class="auth-card">
+    <div class="auth-brand-panel">
+      <div class="brand">
+        <div class="brand-icon">▱</div>
+        <div>
+          <div class="brand-name">sourcebook</div>
+          <div class="brand-tag">NotebookLM Studio · Stage 1–5</div>
+        </div>
+      </div>
+      <div class="auth-hero">
+        <h1>Upload once. Ask anything with grounded precision.</h1>
+        <p>Direct-to-S3 versioned documents, Docling structure &amp; table extraction, Presidio PII redaction, automatic BGE-M3 pgvector indexing, 20→3 reranking, and local Ollama answer synthesis—all on one screen.</p>
+      </div>
+      <div class="auth-badges">
+        <span>PDF · DOCX · XLSX · CSV · MD</span>
+        <span>Docling + Presidio PII</span>
+        <span>Auto BGE-M3 (1,024D)</span>
+        <span>Stage 4 Rerank + Stage 5 Ollama LLM</span>
+      </div>
+    </div>
+    <div class="auth-form-panel">
+      <h2 id="authTitle">Welcome back</h2>
+      <p id="authIntro" class="auth-intro">Sign in to open your NotebookLM research workspace.</p>
+      <div class="auth-tabs">
+        <button id="loginTab" class="active" type="button">Log in</button>
+        <button id="signupTab" type="button">Create account</button>
+      </div>
+      <div id="authMessage" class="form-error hidden"></div>
+      <form id="authForm">
+        <div id="usernameField" class="field hidden">
+          <label for="username">Username</label>
+          <input id="username" name="username" minlength="3" maxlength="50" pattern="^[A-Za-z0-9_.-]+$" placeholder="your_username" />
+        </div>
+        <div class="field">
+          <label for="email">Email address</label>
+          <input id="email" name="email" type="email" required autocomplete="email" placeholder="you@company.com" />
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" required minlength="8" maxlength="72" autocomplete="current-password" placeholder="••••••••" />
+        </div>
+        <button id="authSubmit" class="btn-primary" style="width:100%;margin-top:4px" type="submit">Log in ↗</button>
+      </form>
+      <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="font-size:10.5px;color:var(--muted)">Local API: <code id="apiUrlLabel">http://localhost:8000</code></span>
+        <button id="demoModeBtn" type="button" class="btn-secondary" style="font-size:10.5px;padding:6px 10px">Preview Studio Demo</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN 100VH ZERO-SCROLL NOTEBOOKLM STUDIO -->
+<div id="appView" class="app-shell hidden">
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="brand">
+        <div class="brand-icon" style="width:30px;height:30px;font-size:15px;border-radius:9px">▱</div>
+        <span class="brand-name" style="font-size:16px">sourcebook</span>
+      </div>
+      <div class="crumb-pill">
+        <span id="crumbSession">Current session</span>
+        <span>›</span>
+        <strong id="crumbWorkspace">Workspace 1</strong>
+      </div>
+      <span id="readOnlyBadge" class="status-chip hidden" title="Saved conversations and sources remain available across logins" style="background:var(--amber-soft);color:var(--amber);border-color:#fde68a">Saved session</span>
+    </div>
+    <div class="topbar-right">
+      <div class="status-chip" title="FastAPI Backend Status">
+        <span id="apiDot" class="dot"></span>
+        <span id="apiStatus">Backend ready</span>
+      </div>
+      <div class="status-chip" title="Local Ollama Embedding, Reranker & Chat Models">
+        <span id="ollamaDot" class="dot"></span>
+        <span id="ollamaStatus">Ollama · BGE-M3</span>
+      </div>
+      <button type="button" class="btn-secondary" id="checkModelsBtn" style="padding:5px 10px">Verify Ollama</button>
+      <button type="button" class="btn-secondary" id="refreshBtn" style="padding:5px 10px">↻ Sync</button>
+      <button type="button" class="btn-primary" id="addSourcesBtn" style="padding:6px 12px">＋ Add source</button>
+    </div>
+  </header>
+
+  <div class="studio-grid">
+    <!-- LEFT SIDEBAR: WORKSPACES, SESSIONS & SOURCES -->
+    <aside class="panel">
+      <div class="left-panel-header">
+        <div style="display:flex;gap:6px">
+          <button type="button" class="btn-primary" id="newWorkspaceBtn" style="flex:1;padding:8px 10px">＋ New workspace</button>
+        </div>
+        <div class="left-Switch-tabs">
+          <button type="button" id="tabSourcesBtn" class="left-switch-btn active">Sources (<span id="sourcesTabCount">0</span>)</button>
+          <button type="button" id="tabSessionsBtn" class="left-switch-btn">Sessions &amp; Workspaces</button>
+        </div>
+      </div>
+
+      <!-- TAB 1: SOURCES IN ACTIVE WORKSPACE -->
+      <div id="leftSourcesPane" class="left-pane-body">
+        <div id="dropZone" class="compact-upload-box" role="button" tabindex="0">
+          <select id="uploadMode" class="upload-mode-select" aria-label="Upload mode">
+            <option value="new">Upload as: New document source</option>
+          </select>
+          <div style="font-size:11.5px;font-weight:700;color:var(--ink)">Drop files or <span style="color:var(--brand);text-decoration:underline">browse</span></div>
+          <div style="font-size:9.5px;color:var(--muted);margin-top:2px">PDF, DOCX, DOC, XLSX, XLS, CSV, TSV, MD, TXT · Auto-indexes</div>
+          <input id="fileInput" type="file" class="hidden" multiple accept=".pdf,.docx,.doc,.txt,.md,.csv,.tsv,.xls,.xlsx" />
+        </div>
+        <div id="documentList" class="pane-scroll"></div>
+      </div>
+
+      <!-- TAB 2: SESSIONS & WORKSPACES -->
+      <div id="leftSessionsPane" class="left-pane-body hidden">
+        <div class="pane-scroll">
+          <div class="section-eyebrow">
+            <span>Work sessions</span>
+            <span id="sessionCount">0</span>
+          </div>
+          <div id="sessionList"></div>
+        </div>
+      </div>
+
+      <div class="left-footer">
+        <div id="userAvatar" class="avatar">U</div>
+        <div class="user-meta">
+          <div id="userName" class="user-name">Account</div>
+          <div id="userEmail" class="user-email"></div>
+        </div>
+        <button id="logoutBtn" type="button" class="mini-btn" title="Log out">Log out</button>
+      </div>
+    </aside>
+
+    <div class="resize-handle" id="leftResizeHandle" role="separator" aria-orientation="vertical"
+         aria-label="Resize sources and chat panels" aria-controls="leftSourcesPane chatStream"
+         title="Drag to resize · double-click to collapse" tabindex="0"></div>
+
+    <!-- CENTER PANEL: DIRECT CONVERSATIONAL AI CHAT -->
+    <main class="panel">
+      <div class="chat-header">
+        <div class="chat-header-title">
+          <h1 id="workspaceTitle">Workspace 1</h1>
+          <span id="indexedSourcesBadge" class="source-ready-pill">0 indexed sources</span>
+        </div>
+        <div class="chat-controls">
+          <label for="searchTopK" style="font-size:10.5px;font-weight:700;color:var(--muted)">Stage 4</label>
+          <select id="searchTopK" title="Stage 4 Reranker: Retrieve 20 hybrid candidates and rerank to Top K">
+            <option value="3" selected>Top 20 → Top 3</option>
+            <option value="5">Top 20 → Top 5</option>
+          </select>
+          <label for="chatModelSelect" style="font-size:10.5px;font-weight:700;color:var(--muted)">Stage 5 LLM</label>
+          <select id="chatModelSelect" title="Stage 5 Local Ollama LLM for Final Answer Synthesis">
+            <option value="auto" selected>Auto (Ollama LLM)</option>
+            <option value="llama3.2">llama3.2</option>
+            <option value="qwen2.5">qwen2.5</option>
+            <option value="llama3.1">llama3.1</option>
+            <option value="mistral">mistral</option>
+            <option value="gemma2">gemma2</option>
+            <option value="deepseek-r1">deepseek-r1</option>
+            <option value="phi3">phi3</option>
+          </select>
+          <label style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:var(--muted)">
+            <input type="checkbox" id="searchIncludeSuperseded" /> All versions
+          </label>
+          <button type="button" class="mini-btn" id="clearChatBtn" title="Clear saved messages in this workspace">Clear chat</button>
+        </div>
+      </div>
+
+      <div id="chatStream" class="chat-stream">
+        <div id="chatWelcome" class="notebook-welcome">
+          <div class="notebook-welcome-icon">✦</div>
+          <h2>What would you like to know?</h2>
+        </div>
+      </div>
+
+      <form id="chatForm" class="chat-composer-wrap">
+        <div class="chat-composer">
+          <input id="chatQueryInput" class="chat-input" type="text" maxlength="8000" placeholder="Ask a question about the sources in this workspace…" autocomplete="off" required />
+          <button id="chatSubmitBtn" type="submit" class="chat-send-btn">Ask ↵</button>
+        </div>
+      </form>
+    </main>
+
+    <div class="resize-handle" id="rightResizeHandle" role="separator" aria-orientation="vertical"
+         aria-label="Resize chat and RAG pipeline panels" aria-controls="chatStream pipelineTelemetryBox"
+         title="Drag to resize · double-click to collapse" tabindex="0"></div>
+
+    <!-- RIGHT SIDEBAR: END-TO-END RAG PIPELINE PROGRESS (NO SCROLLING) -->
+    <aside class="panel">
+      <div class="right-panel-header">
+        <div class="right-top-row">
+          <div class="right-title">
+            <span id="pipelineDot" class="dot"></span>
+            <span id="pipelineTitle">End-to-End RAG Pipeline</span>
+          </div>
+          <span id="pipelineOverall" class="right-overall-badge">Ready</span>
+        </div>
+        <div id="pipelineSub" class="right-sub">Automatic Stage 1 → Stage 5 workflow</div>
+        <div class="master-progress-track">
+          <div id="pipelineProgressFill" class="master-progress-fill" style="width:0%"></div>
+        </div>
+      </div>
+
+      <div class="pipeline-steps-list">
+        <div class="rag-step" id="ragStage1">
+          <div class="rag-step-num" id="ragNum1">1</div>
+          <div class="rag-step-copy">
+            <div class="rag-step-name">Authorize &amp; S3 Upload</div>
+            <div class="rag-step-desc">Presigned S3 transfer &amp; SHA-256 check</div>
+          </div>
+          <span class="rag-step-state" id="ragState1">Idle</span>
+        </div>
+        <div class="rag-step" id="ragStage2">
+          <div class="rag-step-num" id="ragNum2">2</div>
+          <div class="rag-step-copy">
+            <div class="rag-step-name">Immutable Version Lineage</div>
+            <div class="rag-step-desc">Promote S3 key &amp; commit PostgreSQL</div>
+          </div>
+          <span class="rag-step-state" id="ragState2">Idle</span>
+        </div>
+        <div class="rag-step" id="ragStage3">
+          <div class="rag-step-num" id="ragNum3">3</div>
+          <div class="rag-step-copy">
+            <div class="rag-step-name">Docling Structure Extraction</div>
+            <div class="rag-step-desc">PDF / DOCX / Excel tables &amp; main_content</div>
+          </div>
+          <span class="rag-step-state" id="ragState3">Idle</span>
+        </div>
+        <div class="rag-step" id="ragStage4">
+          <div class="rag-step-num" id="ragNum4">4</div>
+          <div class="rag-step-copy">
+            <div class="rag-step-name">Presidio PII Guardrail</div>
+            <div class="rag-step-desc">Sensitive entity scan &amp; redaction</div>
+          </div>
+          <span class="rag-step-state" id="ragState4">Idle</span>
+        </div>
+        <div class="rag-step" id="ragStage5">
+          <div class="rag-step-num" id="ragNum5">5</div>
+          <div class="rag-step-copy">
+            <div class="rag-step-name">NLP &amp; Concept Chunking</div>
+            <div class="rag-step-desc">Atomic pointer &amp; table row chunks</div>
+          </div>
+          <span class="rag-step-state" id="ragState5">Idle</span>
+        </div>
+        <div class="rag-step" id="ragStage6">
+          <div class="rag-step-num" id="ragNum6">6</div>
+          <div class="rag-step-copy">
+            <div class="rag-step-name">Save JSON Artifact</div>
+            <div class="rag-step-desc">Persist main_content &amp; chunks in S3</div>
+          </div>
+          <span class="rag-step-state" id="ragState6">Idle</span>
+        </div>
+        <div class="rag-step" id="ragStage7">
+          <div class="rag-step-num" id="ragNum7">7</div>
+          <div class="rag-step-copy">
+            <div class="rag-step-name">Auto BGE-M3 Vector Index</div>
+            <div class="rag-step-desc">1,024-D Ollama embeddings in pgvector</div>
+          </div>
+          <span class="rag-step-state" id="ragState7">Idle</span>
+        </div>
+        <div class="rag-step" id="ragStage8">
+          <div class="rag-step-num" id="ragNum8">8</div>
+          <div class="rag-step-copy">
+            <div class="rag-step-name">Stage 4: Ollama Reranker</div>
+            <div class="rag-step-desc">Top 20 hybrid chunks → Top 3/5 ranked</div>
+          </div>
+          <span class="rag-step-state" id="ragState8">Idle</span>
+        </div>
+        <div class="rag-step" id="ragStage9">
+          <div class="rag-step-num" id="ragNum9">9</div>
+          <div class="rag-step-copy">
+            <div class="rag-step-name">Stage 5: Ollama LLM Answer</div>
+            <div class="rag-step-desc">Ranked chunks + Query → Ollama LLM</div>
+          </div>
+          <span class="rag-step-state" id="ragState9">Idle</span>
+        </div>
+      </div>
+
+      <div id="pipelineTelemetryBox" class="right-telemetry-box"><strong>No indexed sources</strong></div>
+    </aside>
+  </div>
+</div>
+
+<!-- IN-PAGE CONFIRM MODAL -->
+<div id="confirmModal" class="modal-backdrop hidden">
+  <div class="modal-card">
+    <h3 id="confirmTitle">Confirm action</h3>
+    <p id="confirmMessage">Are you sure you want to proceed?</p>
+    <div class="modal-actions">
+      <button id="confirmCancelBtn" type="button" class="btn-secondary">Cancel</button>
+      <button id="confirmOkBtn" type="button" class="btn-primary" style="background:var(--red)">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div id="toastRegion" class="toast-region" aria-live="polite"></div>
+
+<script type="module" src="./assets/js/app.js"></script>
+
+</body>
+</html>

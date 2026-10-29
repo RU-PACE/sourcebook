@@ -1,0 +1,3 @@
+# Stage 3 vector indexing: LangChain embedding interface backed by local Ollama.
+# Install: pip install -r requirements.txt -r requirements-stage2.txt -r requirements-stage3.txt
+langchain-ollama>=0.3.0,<2.0

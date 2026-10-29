@@ -1,0 +1,4 @@
+-r requirements.txt
+-r requirements-stage2.txt
+-r requirements-stage3.txt
+pytest>=8.0,<10.0
