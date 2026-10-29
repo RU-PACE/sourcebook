@@ -16,75 +16,29 @@ The default development setup runs FastAPI, PostgreSQL, and Ollama on the host m
 
 The LangGraph workflow orchestrates Stage 3 document preparation. Embedding/indexing and the question-answering path are separate modules. The query path performs retrieval and reranking before sending the selected passages to the configured chat model.
 
-## End-to-end process, in detail
-
-The circled numbers show the order of work within each phase.
+## Architecture at a glance
 
 ```mermaid
-flowchart TD
-    subgraph AUTH["1. Account and workspace"]
-      A1["① User submits signup form"] --> A2["② POST /api/v1/auth/signup"]
-      A2 --> A3["③ Validate input and hash password"]
-      A3 --> A4[(④ Insert user in PostgreSQL)]
-      A4 --> A5["⑤ Create working session and initial workspace"]
-      A5 --> A6["⑥ Issue access JWT and HTTP-only refresh cookie"]
-      A7["⑦ User signs in later"] --> A8["⑧ Verify password and create a new working session"]
-      A8 --> A9["⑨ Create initial workspace for that session"]
-      A9 --> A6
-    end
-
-    subgraph UPLOAD["2. Source upload"]
-      U1["① Choose file in browser"] --> U2["② Calculate SHA-256 and send file metadata"]
-      U2 --> U3["③ POST /api/v1/documents/upload-intents"]
-      U3 --> U4["④ Check user, current session and workspace ownership"]
-      U4 --> U5[(⑤ Create source/version and upload-intent rows)]
-      U5 --> U6["⑥ Return short-lived presigned upload policy"]
-      U6 --> U7["⑦ Browser POSTs file bytes to MinIO/S3 staging key"]
-      U7 --> U8["⑧ POST /api/v1/documents/upload-intents/{id}/complete"]
-      U8 --> U9["⑨ Verify object size, metadata and checksum"]
-      U9 --> U10["⑩ Promote verified object to final version key"]
-      U10 --> U11[(⑪ Finalize document status in PostgreSQL)]
-    end
-
-    subgraph INGEST["3. LangGraph document preparation"]
-      I1["① Queue ingestion run"] --> I2["② Extract layout, text, tables and locations"]
-      I2 --> I3["③ PII scan and configured redaction"]
-      I3 --> I4{"④ Artifact policy"}
-      I4 -->|Eligible| I5["⑤ Entity and relationship enrichment"]
-      I4 -->|Not eligible| I6["⑥ Mark run/artifact quarantined"]
-      I5 --> I7["⑦ Structure-aware chunking"]
-      I7 --> I8["⑧ Build sanitized JSON artifact"]
-      I8 --> I9["⑨ Write artifact to object storage"]
-      I9 --> I10[(⑩ Store artifact, run, status and PII-finding metadata)]
-    end
-
-    subgraph INDEX["4. Embedding and indexing"]
-      E1["① Load eligible artifact and chunks"] --> E2["② Validate version, policy, hash and status"]
-      E2 --> E3["③ Embed chunks with Ollama BGE-M3"]
-      E3 --> E4["④ Validate 1,024-dimensional vectors"]
-      E4 --> E5[(⑤ Persist chunks and embeddings in PostgreSQL/pgvector)]
-      E5 --> E6["⑥ Mark document version INDEXED"]
-    end
-
-    subgraph QUERY["5. Question answering"]
-      Q1["① User asks a workspace question"] --> Q2["② Authenticate and verify workspace ownership"]
-      Q2 --> Q3["③ Embed question with Ollama"]
-      Q3 --> Q4["④ Search indexed chunks with pgvector"]
-      Q4 --> Q5["⑤ Add custom lexical signals and rank candidates"]
-      Q5 --> Q6["⑥ Score excerpts and select top passages"]
-      Q6 --> Q7["⑦ Send question, context and relevant history to Ollama chat model"]
-      Q7 --> Q8["⑧ Build answer and source citations"]
-      Q8 --> Q9["⑨ Return response and telemetry to browser"]
-      Q9 --> Q10[(⑩ Persist user/assistant messages for the workspace)]
-    end
-
-    A6 --> U1
-    U11 --> I1
-    I10 --> E1
-    E6 --> Q1
+flowchart LR
+    B[Browser UI<br/>HTML, CSS, JS] -->|JSON API + auth| A[FastAPI]
+    B -->|Short-lived presigned POST| O[MinIO by default<br/>or AWS S3]
+    A -->|users, sessions, workspaces,<br/>sources, versions, messages| P[(PostgreSQL)]
+    A -->|original files + JSON artifacts| O
+    A -->|LangGraph Stage | I[Extract, inspect, redact,<br/>enrich, chunk]
+    I -->|artifact status + PII metadata| P
+    I -->|sanitized JSON artifact| O
+    A -->|approved chunks| E[Ollama BGE-M3]
+    E -->|vectors + chunk rows| P
+    B -->|Question| A
+    A -->|Query embedding| E
+    P -->|pgvector candidates| A
+    A --> R[rerank candidates]
+    R --> G[grounded answer]
+    G -->|Ollama chat model| L[Ollama]
+    L --> G
+    G -->|Answer + citations + telemetry| B
+    B -->|Save/load/clear chat| P
 ```
-
-**Important boundaries:** The file itself is stored in MinIO/S3, not in a PostgreSQL byte column. PostgreSQL stores ownership, lifecycle, source/version metadata, chunk text and vectors, statuses, citations, and references to stored artifacts. The LangGraph graph ends after Stage 3 artifact persistence; Stage 4 indexing and Stages 5 question answering are implemented outside that graph.
 
 ## Repository map
 
